@@ -1,39 +1,266 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>SSE Demo</title>
-    <meta charset="utf-8" />
-  </head>
-  <body>
-    <div id="app"></div>
-    <script src="react/react.js"></script>
-    <script src="react/react-dom.js"></script>
-    <script src="react/babel.js"></script>
-    <script type="text/babel">
 
-      const useState = React.useState;
-      const useEffect = React.useEffect;
-      
-      function App() {
-	  const [time, setTime] = useState('');
-	  useEffect(() => {
-              const eventSource = new EventSource('http://localhost:5000/events');
-              eventSource.onmessage = (event) => {
-		  const data = JSON.parse(event.data);
-		  setTime(data.time);
-              };
-              return () => eventSource.close();
-	  }, []);
-	  return (
-		  <div>
-		  <h1>Server-Sent Events Demo</h1>
-		  <p>Current Time: {time}</p>
-		  </div>
-	  );
+<head>
+  <title>Stock Data</title>
+  <meta charset="utf-8" />
+</head>
+
+<body>
+  <div id="app"></div>
+  <script src="react/react.js"></script>
+  <script src="react/react-dom.js"></script>
+  <script src="react/babel.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/d3js/7.8.5/d3.min.js"></script>
+  <script src="d3.v7.min.js"></script>
+  <script type="text/babel">
+
+    const useState = React.useState;
+    const useEffect = React.useEffect;
+
+    class stockQueueClass {
+      constructor(stockData) {
+        const MAX_SIZE = 500;
+        this.size = 0;
+        this.arr1 = [];
+        this.priceArr = [];
       }
-      ReactDOM.render(
-              <App />,
-	  document.getElementById('app'));
-    </script>
-  </body>
+      isEmpty() {
+        return this.size == 0;
+      }
+      // Inserts data onto front of queue
+      enqueue(stockData) {
+
+        this.size = this.arr1.push(stockData);
+
+      }
+      // Removes data off of back of queue
+      dequeue(stockData) {
+        if (!isEmpty()) {
+          this.arr1.splice(1, 0);
+        }
+      }
+      // Returns stock data at front without removing
+      front() {
+        return this.arr1[0];
+      }
+      // Returns stock data at end without removing
+      end() {
+        return this.arr1[this.length() - 1];
+      }
+      // Self-explanatory.
+      length() {
+        return this.size;
+      }
+      prices(stockData) {
+        for (let i = 0; i < this.length(); i++) {
+          this.priceArr[i] = this.arr1[i].price;
+        }
+        return this.priceArr;
+      }
+    }
+    const aQ = new stockQueueClass();
+    const iQ = new stockQueueClass();
+    const dQ = new stockQueueClass();
+    const nQ = new stockQueueClass();
+
+    function App() {
+      const [time, setTime] = useState('');
+      const [amznData, setAmzn] = useState('');
+      const [IBMData, setIBM] = useState('');
+      const [DOWData, setDOW] = useState('');
+      const [NASDAQData, setNASDAQ] = useState('');
+
+
+      // Helper function to update a sparkline
+      function updateSparkline(svgSelector, data) {
+        const prices = data.prices();
+        if (prices.length < 2) return;
+
+        const svg = d3.select(svgSelector).select("svg");
+
+        const xScale = d3.scaleLinear()
+          .domain([0, prices.length - 1])
+          .range([0, 10000]);
+
+        const yScale = d3.scaleLinear()
+          .domain(d3.extent(prices))
+          .range([18, 2]);
+
+        const line = d3.line()
+          .x((d, i) => xScale(i))
+          .y(d => yScale(d));
+
+        svg.select(".linePath")
+          .attr("d", line(prices));
+      }
+
+      useEffect(() => {
+        const sparkIds = ["#amznspark", "#ibmspark", "#dowspark", "#nasdaqspark"];
+        sparkIds.forEach(id => {
+          d3.select(id)
+            .append("svg")
+            .attr("width", 150)
+            .attr("height", 20)
+            .append("path")
+            .attr("class", "linePath")
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 1.5);
+        });
+
+        /*const xScale = d3.scaleLinear()
+          .domain([0, 500])
+          .range([0, 150]);
+        const yScale = d3.scaleLinear()
+          .domain([0, 100]) // Auto-scale to data range
+          .range([18, 2]); // Leave small margin
+        const line = d3.line()
+          .x((d, i) => xScale(i))
+          .y(d => yScale(d)); // NOW using the scale
+
+
+        const svg = d3.select("#amznspark")
+          .append("svg")
+          .attr("width", 150)
+          .attr("height", 20);
+
+        svg.append("path")
+          .attr("class", "linePath")
+          .attr("fill", "none")
+          .attr("stroke", "steelblue")
+          .attr("stroke-width", 1.5);*/
+
+
+        const eventSource = new EventSource('http://localhost:31415/stocks');
+        eventSource.onmessage = (event) => {
+          let curTimeMs = new Date(Date.now());
+          let curTime = curTimeMs.toString();
+          const data = JSON.parse(event.data);
+
+          if (data.ticker == "AMZN") {
+            setAmzn({ ticker: "AMZN", name: "Amazon", price: data.price, volume: data.volume });
+            aQ.enqueue(data);
+            updateSparkline("#amznspark", aQ);
+            console.log(aQ.end());
+
+
+          }
+          else if (data.ticker == "IBM") {
+            setIBM({ ticker: "IBM", name: "International Business Machines", price: data.price, volume: data.volume });
+            iQ.enqueue(data);
+            updateSparkline("#ibmspark", iQ);
+            console.log(iQ.end());
+          }
+          else if (data.ticker == "DOW") {
+            setDOW({ ticker: "DOW", name: "Dow Jones Industrial Average", price: data.price, volume: data.volume });
+            updateSparkline("#dowspark", dQ);
+            dQ.enqueue(data);
+            console.log(dQ.end());
+          }
+          else if (data.ticker == "NASDAQ") {
+            setNASDAQ({ ticker: "NASDAQ", name: "Nasdaq Composite", price: data.price, volume: data.volume });
+            updateSparkline("#nasdaqspark", nQ);
+            nQ.enqueue(data);
+            console.log(nQ.end());
+          }
+          setTime(curTime);
+        };
+
+        return () => eventSource.close();
+      }, []);
+      return (
+        <table id="stockTable">
+          <caption>
+            <h1>Server-Sent Events Demo</h1>
+            <p>Current Time: {time}</p>
+          </caption>
+          <tbody>
+            <tr>
+              <th id="tick">Ticker</th>
+              <th id="name">Name</th>
+              <th id="ltp">Trade price</th>
+              <th id="ltv">Trade Volume</th>
+              <th id="trends">Trends</th>
+            </tr>
+            <tr id="AMAZON">
+              <td>AMZN</td>
+              <td>Amazon</td>
+              <td>{amznData.price}</td>
+              <td>{amznData.volume}</td>
+              <td id="amznspark"><div id="amznspark1">
+
+
+
+              </div></td>
+            </tr>
+            <tr id="IBM">
+              <td>IBM</td>
+              <td>International Business Machines</td>
+              <td>{IBMData.price}</td>
+              <td>{IBMData.volume}</td>
+              <td id="ibmspark"><div id="ibmspark1">
+
+
+
+              </div></td>
+            </tr>
+            <tr id="DOW">
+              <td>DOW</td>
+              <td>Dow Jones Industrial Average</td>
+              <td>{DOWData.price}</td>
+              <td>{DOWData.volume}</td>
+              <td id="dowspark"><div id="dowspark1">
+
+
+
+              </div></td>
+            </tr>
+            <tr id="NASDAQ">
+              <td>NASDAQ</td>
+              <td>NASDAQ Composite</td>
+              <td>{NASDAQData.price}</td>
+              <td>{NASDAQData.volume}</td>
+              <td id="nasdaqspark"><div id="nasdaqspark1">
+
+
+
+              </div></td>
+            </tr>
+          </tbody>
+        </table>
+
+      );
+    }
+    ReactDOM.render(
+      <App />,
+      document.getElementById('app'));
+  </script>
+</body>
+<style>
+  /* * {
+    box-sizing: border-box;
+  }
+
+  body {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+  }
+
+  figure {
+    margin: 0;
+  }
+
+  svg {
+    width: 100%;
+    height: auto;
+  }
+
+  .chart-wrapper {
+    max-width: 600px;
+  } */
+</style>
+
 </html>
